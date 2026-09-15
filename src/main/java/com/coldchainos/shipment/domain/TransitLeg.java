@@ -47,6 +47,22 @@ public class TransitLeg {
         return new TransitLeg(LegId.newId(), sequenceNumber, origin, destination, estimatedDeparture, estimatedArrival);
     }
 
+    public static TransitLeg reconstitute(
+        LegId id,
+        int sequenceNumber,
+        Location origin,
+        Location destination,
+        CarrierId assignedCarrierId,
+        LegStatus status,
+        Instant estimatedDeparture,
+        Instant estimatedArrival
+    ) {
+        TransitLeg leg = new TransitLeg(id, sequenceNumber, origin, destination, estimatedDeparture, estimatedArrival);
+        leg.assignedCarrierId = assignedCarrierId;
+        leg.status = status;
+        return leg;
+    }
+
     public void assignCarrier(CarrierId carrierId) {
         Objects.requireNonNull(carrierId, "carrierId cannot be null");
         if (this.status == LegStatus.COMPLETED || this.status == LegStatus.CANCELLED) {

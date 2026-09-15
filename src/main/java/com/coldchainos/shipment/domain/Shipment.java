@@ -82,6 +82,32 @@ public class Shipment extends AggregateRoot<ShipmentId> {
         return new Shipment(id, tenantId, trackingNumber, threshold, legs);
     }
 
+    public static Shipment reconstitute(
+        ShipmentId id,
+        TenantId tenantId,
+        TrackingNumber trackingNumber,
+        TemperatureThreshold threshold,
+        ShipmentStatus status,
+        ShipmentStatus preQuarantineStatus,
+        List<TransitLeg> legs,
+        List<CustodyRecord> custodyHistory,
+        Instant createdAt,
+        Instant deliveredAt,
+        String proofOfDeliverySignature
+    ) {
+        Shipment shipment = new Shipment(id, tenantId, trackingNumber, threshold, legs);
+        shipment.clearDomainEvents();
+        shipment.status = status;
+        shipment.preQuarantineStatus = preQuarantineStatus;
+        shipment.custodyHistory.clear();
+        if (custodyHistory != null) {
+            shipment.custodyHistory.addAll(custodyHistory);
+        }
+        shipment.deliveredAt = deliveredAt;
+        shipment.proofOfDeliverySignature = proofOfDeliverySignature;
+        return shipment;
+    }
+
     /**
      * Assigns a carrier to a specific leg of the journey.
      * When all legs have assigned carriers, shipment automatically advances to ASSIGNED.

@@ -27,6 +27,11 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-validation")
 
+    // Persistence: Spring Data JPA + PostgreSQL + Flyway
+    implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+    runtimeOnly("org.postgresql:postgresql")
+    implementation("org.flywaydb:flyway-core")
+
     // Lombok for boilerplate reduction
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")

@@ -4,5 +4,31 @@ spring:
   main:
     banner-mode: off
 
+  datasource:
+    url: jdbc:postgresql://localhost:5438/coldchainos_db
+    username: coldchain_admin
+    password: coldchain_secret_password
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 25
+      minimum-idle: 5
+      idle-timeout: 30000
+      connection-timeout: 20000
+      pool-name: ColdChainHikariPool
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: false
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
 server:
   port: 8080
