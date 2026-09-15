@@ -1,0 +1,48 @@
+plugins {
+    java
+    id("org.springframework.boot") version "3.2.5"
+    id("io.spring.dependency-management") version "1.1.4"
+}
+
+group = "com.coldchainos"
+version = "0.0.1-SNAPSHOT"
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+configurations {
+    compileOnly {
+        extendsFrom(configurations.annotationProcessor.get())
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Spring Boot Core Web & Validation
+    implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.boot:spring-boot-starter-validation")
+
+    // Lombok for boilerplate reduction
+    compileOnly("org.projectlombok:lombok")
+    annotationProcessor("org.projectlombok:lombok")
+    testCompileOnly("org.projectlombok:lombok")
+    testAnnotationProcessor("org.projectlombok:lombok")
+
+    // Testing: JUnit 5, AssertJ, Mockito
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
+
+    // Architecture Testing: ArchUnit (Enforces modular monolith boundaries)
+    testImplementation("com.tngtech.archunit:archunit-junit5:1.3.0")
+}
+
+tasks.withType<Test> {
+    useJUnitPlatform()
+    testLogging {
+        events("passed", "skipped", "failed")
+    }
+}
