@@ -21,13 +21,23 @@ class PostgresShipmentRepositoryTest {
     @Autowired
     private ShipmentRepository shipmentRepository;
 
+    @Autowired
+    private com.coldchainos.tenant.application.TenantProvisioningService provisioningService;
+
+    private final TenantId tenantId = TenantId.of("pharma_intl");
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        provisioningService.provisionTenant(tenantId, "Pharma International Inc");
+    }
+
     @Test
-    @Transactional
     @DisplayName("Should successfully persist and retrieve a full Shipment aggregate with legs and custody records")
     void shouldPersistAndRetrieveFullShipmentAggregate() {
-        TenantId tenantId = TenantId.of("pharma_intl");
-        TrackingNumber trackingNumber = TrackingNumber.of("SHP-2026-INTL001");
-        TemperatureThreshold threshold = TemperatureThreshold.forCategory(ThermalCategory.ULTRA_COLD_MINUS_80, 600);
+        com.coldchainos.shared.multitenancy.TenantContext.executeAs(tenantId, () -> {
+            String suffix = java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+            TrackingNumber trackingNumber = TrackingNumber.of("SHP-2026-" + suffix);
+            TemperatureThreshold threshold = TemperatureThreshold.forCategory(ThermalCategory.ULTRA_COLD_MINUS_80, 600);
 
         Location origin = Location.of("BOS", "Boston Pharma Depot", "Boston", "US");
         Location destination = Location.of("ZRH", "Zurich Cold Bay", "Zurich", "CH");
@@ -81,5 +91,6 @@ class PostgresShipmentRepositoryTest {
         Optional<Shipment> byTrackingOpt = shipmentRepository.findByTrackingNumber(tenantId, trackingNumber);
         assertThat(byTrackingOpt).isPresent();
         assertThat(byTrackingOpt.get().getId()).isEqualTo(shipment.getId());
+        });
     }
 }

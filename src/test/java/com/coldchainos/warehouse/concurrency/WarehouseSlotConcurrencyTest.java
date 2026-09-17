@@ -33,18 +33,30 @@ class WarehouseSlotConcurrencyTest {
     @Autowired
     private WarehouseSlotReservationService reservationService;
 
+    @Autowired
+    private com.coldchainos.tenant.application.TenantProvisioningService provisioningService;
+
+    private final com.coldchainos.shared.domain.TenantId warehouseTenant = com.coldchainos.shared.domain.TenantId.of("wh_operator");
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        provisioningService.provisionTenant(warehouseTenant, "Warehouse Logistics Operator");
+    }
+
     @Test
     @DisplayName("Concurrency Lab: 20 simultaneous threads racing for the same slot must yield exactly 1 winner and 19 deterministic conflicts")
     void shouldPreventDoubleBookingUnderHighConcurrentContention() throws InterruptedException {
-        // 1. Arrange: Create a physical slot in warehouse
-        WarehouseSlot slot = WarehouseSlot.create(
-            WarehouseId.of("WH-FRANKFURT-01"),
-            "SLOT-ULTRA-B2-" + System.currentTimeMillis(),
-            ThermalCategory.ULTRA_COLD_MINUS_80,
-            1500.0
-        );
-        WarehouseSlot savedSlot = slotRepository.save(slot);
-        SlotId slotId = savedSlot.getId();
+        // 1. Arrange: Create a physical slot in warehouse under the warehouse tenant
+        SlotId slotId = com.coldchainos.shared.multitenancy.TenantContext.executeAs(warehouseTenant, () -> {
+            WarehouseSlot slot = WarehouseSlot.create(
+                WarehouseId.of("WH-FRANKFURT-01"),
+                "SLOT-ULTRA-B2-" + System.currentTimeMillis(),
+                ThermalCategory.ULTRA_COLD_MINUS_80,
+                1500.0
+            );
+            WarehouseSlot savedSlot = slotRepository.save(slot);
+            return savedSlot.getId();
+        });
 
         // Target reservation window: 2-hour storage block
         Instant start = Instant.now().plus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
@@ -67,9 +79,14 @@ class WarehouseSlotConcurrencyTest {
                 try {
                     startLatch.await(); // All 20 threads release simultaneously here!
 
-                    ShipmentId concurrentShipment = ShipmentId.newId();
-                    reservationService.reserveWithPessimisticLock(slotId, concurrentShipment, window);
-                    successCount.incrementAndGet();
+                    com.coldchainos.shared.multitenancy.TenantContext.setTenantId(warehouseTenant);
+                    try {
+                        ShipmentId concurrentShipment = ShipmentId.newId();
+                        reservationService.reserveWithPessimisticLock(slotId, concurrentShipment, window);
+                        successCount.incrementAndGet();
+                    } finally {
+                        com.coldchainos.shared.multitenancy.TenantContext.clear();
+                    }
                 } catch (SlotReservationException e) {
                     // Expected domain conflict invariant
                     conflictCount.incrementAndGet();
@@ -100,10 +117,12 @@ class WarehouseSlotConcurrencyTest {
             .as("Exactly 19 threads must be rejected due to slot conflict")
             .isEqualTo(19);
 
-        // 4. Verify database state
-        WarehouseSlot finalSlot = slotRepository.findById(slotId).orElseThrow();
-        assertThat(finalSlot.getReservations()).hasSize(1);
-        assertThat(finalSlot.getReservations().get(0).getTimeWindow()).isEqualTo(window);
-        assertThat(finalSlot.getReservations().get(0).isActive()).isTrue();
+        // 4. Verify database state within tenant context
+        com.coldchainos.shared.multitenancy.TenantContext.executeAs(warehouseTenant, () -> {
+            WarehouseSlot finalSlot = slotRepository.findById(slotId).orElseThrow();
+            assertThat(finalSlot.getReservations()).hasSize(1);
+            assertThat(finalSlot.getReservations().get(0).getTimeWindow()).isEqualTo(window);
+            assertThat(finalSlot.getReservations().get(0).isActive()).isTrue();
+        });
     }
 }

@@ -13,7 +13,7 @@ public record ShipmentCancelledEvent(
     TenantId tenantId,
     ShipmentId shipmentId,
     String reason
-) implements DomainEvent {
+) implements ShipmentEvent {
 
     public ShipmentCancelledEvent(TenantId tenantId, ShipmentId shipmentId, String reason) {
         this(UUID.randomUUID(), Instant.now(), tenantId, shipmentId, reason);

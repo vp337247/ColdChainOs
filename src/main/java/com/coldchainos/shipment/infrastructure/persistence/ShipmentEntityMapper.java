@@ -55,6 +55,40 @@ public class ShipmentEntityMapper {
         return entity;
     }
 
+    public static void updateEntity(ShipmentJpaEntity target, Shipment domain) {
+        target.setStatus(domain.getStatus().name());
+        target.setPreQuarantineStatus(domain.getPreQuarantineStatus() != null ? domain.getPreQuarantineStatus().name() : null);
+        target.setDeliveredAt(domain.getDeliveredAt());
+        target.setProofOfDeliverySignature(domain.getProofOfDeliverySignature());
+
+        // Update legs status / carriers
+        for (TransitLeg leg : domain.getLegs()) {
+            target.getLegs().stream()
+                .filter(l -> l.getId().equals(leg.getId().value()))
+                .findFirst()
+                .ifPresent(existingLeg -> {
+                    existingLeg.setStatus(leg.getStatus().name());
+                    existingLeg.setAssignedCarrierId(leg.getAssignedCarrierId() != null ? leg.getAssignedCarrierId().value() : null);
+                });
+        }
+
+        // Add any newly appended custody records
+        for (CustodyRecord custody : domain.getCustodyHistory()) {
+            boolean exists = target.getCustodyRecords().stream()
+                .anyMatch(c -> c.getId().equals(custody.getId().value()));
+            if (!exists) {
+                CustodyRecordJpaEntity custodyEntity = new CustodyRecordJpaEntity();
+                custodyEntity.setId(custody.getId().value());
+                custodyEntity.setReleasingParty(custody.getReleasingParty());
+                custodyEntity.setReceivingParty(custody.getReceivingParty());
+                custodyEntity.setSurfaceTemperature(custody.getSurfaceTemperatureCelsius());
+                custodyEntity.setRecordedAt(custody.getRecordedAt());
+                custodyEntity.setDigitalSignature(custody.getDigitalSignature());
+                target.addCustodyRecord(custodyEntity);
+            }
+        }
+    }
+
     public static Shipment toDomain(ShipmentJpaEntity entity) {
         TenantId tenantId = TenantId.of(entity.getTenantId());
         ShipmentId shipmentId = new ShipmentId(entity.getId());

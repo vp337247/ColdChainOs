@@ -14,7 +14,7 @@ public record ShipmentQuarantinedEvent(
     ShipmentId shipmentId,
     UUID incidentId,
     String reason
-) implements DomainEvent {
+) implements ShipmentEvent {
 
     public ShipmentQuarantinedEvent(TenantId tenantId, ShipmentId shipmentId, UUID incidentId, String reason) {
         this(UUID.randomUUID(), Instant.now(), tenantId, shipmentId, incidentId, reason);

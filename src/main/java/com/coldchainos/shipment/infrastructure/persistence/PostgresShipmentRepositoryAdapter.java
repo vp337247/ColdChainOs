@@ -20,12 +20,24 @@ import java.util.Optional;
 public class PostgresShipmentRepositoryAdapter implements ShipmentRepository {
 
     private final SpringDataShipmentRepository springDataRepository;
+    private final com.coldchainos.shared.outbox.application.OutboxService outboxService;
 
     @Override
     @Transactional
     public void save(Shipment shipment) {
-        ShipmentJpaEntity entity = ShipmentEntityMapper.toEntity(shipment);
+        Optional<ShipmentJpaEntity> existingOpt = springDataRepository.findById(shipment.getId().value());
+        ShipmentJpaEntity entity;
+        if (existingOpt.isPresent()) {
+            entity = existingOpt.get();
+            ShipmentEntityMapper.updateEntity(entity, shipment);
+        } else {
+            entity = ShipmentEntityMapper.toEntity(shipment);
+        }
         springDataRepository.save(entity);
+
+        // Atomically persist domain events to transactional outbox
+        outboxService.saveEvents(shipment.getDomainEvents());
+        shipment.clearDomainEvents();
     }
 
     @Override

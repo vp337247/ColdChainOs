@@ -13,7 +13,7 @@ public record ShipmentDeliveredEvent(
     TenantId tenantId,
     ShipmentId shipmentId,
     String proofOfDeliverySignature
-) implements DomainEvent {
+) implements ShipmentEvent {
 
     public ShipmentDeliveredEvent(TenantId tenantId, ShipmentId shipmentId, String proofOfDeliverySignature) {
         this(UUID.randomUUID(), Instant.now(), tenantId, shipmentId, proofOfDeliverySignature);

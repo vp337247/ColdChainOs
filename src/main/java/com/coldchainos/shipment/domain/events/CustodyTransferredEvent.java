@@ -18,7 +18,7 @@ public record CustodyTransferredEvent(
     String releasingParty,
     String receivingParty,
     BigDecimal surfaceTemperatureCelsius
-) implements DomainEvent {
+) implements ShipmentEvent {
 
     public CustodyTransferredEvent(
         TenantId tenantId,

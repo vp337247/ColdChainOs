@@ -38,8 +38,12 @@ dependencies {
     testCompileOnly("org.projectlombok:lombok")
     testAnnotationProcessor("org.projectlombok:lombok")
 
-    // Testing: JUnit 5, AssertJ, Mockito
+    // Messaging: Spring for Apache Kafka
+    implementation("org.springframework.kafka:spring-kafka")
+
+    // Testing: JUnit 5, AssertJ, Mockito, Spring Kafka Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.springframework.kafka:spring-kafka-test")
 
     // Architecture Testing: ArchUnit (Enforces modular monolith boundaries)
     testImplementation("com.tngtech.archunit:archunit-junit5:1.3.0")

@@ -17,7 +17,7 @@ public record ShipmentQuarantineReleasedEvent(
     String qaOfficerUserId,
     String justification,
     String digitalSignature
-) implements DomainEvent {
+) implements ShipmentEvent {
 
     public ShipmentQuarantineReleasedEvent(
         TenantId tenantId,

@@ -17,7 +17,7 @@ public record ShipmentCreatedEvent(
     ShipmentId shipmentId,
     TrackingNumber trackingNumber,
     TemperatureThreshold threshold
-) implements DomainEvent {
+) implements ShipmentEvent {
 
     public ShipmentCreatedEvent(TenantId tenantId, ShipmentId shipmentId, TrackingNumber trackingNumber, TemperatureThreshold threshold) {
         this(UUID.randomUUID(), Instant.now(), tenantId, shipmentId, trackingNumber, threshold);

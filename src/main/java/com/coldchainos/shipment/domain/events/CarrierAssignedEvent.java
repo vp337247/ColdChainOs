@@ -16,7 +16,7 @@ public record CarrierAssignedEvent(
     ShipmentId shipmentId,
     LegId legId,
     CarrierId carrierId
-) implements DomainEvent {
+) implements ShipmentEvent {
 
     public CarrierAssignedEvent(TenantId tenantId, ShipmentId shipmentId, LegId legId, CarrierId carrierId) {
         this(UUID.randomUUID(), Instant.now(), tenantId, shipmentId, legId, carrierId);

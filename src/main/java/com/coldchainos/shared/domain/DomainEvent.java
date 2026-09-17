@@ -4,18 +4,17 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Base interface for all immutable Domain Events in ColdChainOS.
- * Domain Events represent facts that have occurred in the business domain.
+ * Base marker interface for pure domain events within the domain model.
+ * In accordance with DDD principles and ArchUnit fitness functions,
+ * domain events must remain completely decoupled from serialization and transport frameworks.
  */
 public interface DomainEvent {
 
-    /**
-     * Unique identifier for this event occurrence (for deduplication / idempotency).
-     */
     UUID eventId();
 
-    /**
-     * UTC timestamp when the domain event occurred.
-     */
     Instant occurredAt();
+
+    String aggregateType();
+
+    String aggregateId();
 }
