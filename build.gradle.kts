@@ -41,6 +41,9 @@ dependencies {
     // Messaging: Spring for Apache Kafka
     implementation("org.springframework.kafka:spring-kafka")
 
+    // In-Memory Caching: Redis
+    implementation("org.springframework.boot:spring-boot-starter-data-redis")
+
     // Testing: JUnit 5, AssertJ, Mockito, Spring Kafka Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.kafka:spring-kafka-test")
