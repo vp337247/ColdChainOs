@@ -8,3 +8,6 @@ build/
 .DS_Store
 *.log
 docker-data/
+.env
+.env.local
+*.env
