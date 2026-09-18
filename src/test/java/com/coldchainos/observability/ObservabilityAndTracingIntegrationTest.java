@@ -7,6 +7,7 @@ import com.coldchainos.shared.observability.CorrelationContext;
 import com.coldchainos.shared.outbox.infrastructure.persistence.SpringDataOutboxEventRepository;
 import com.coldchainos.shared.outbox.infrastructure.publisher.OutboxRelayPublisher;
 import com.coldchainos.shipment.application.ShipmentSummaryQueryService;
+import com.coldchainos.shipment.application.TelemetryIngestionService;
 import com.coldchainos.shipment.application.dto.TelemetryStreamPayload;
 import com.coldchainos.shipment.domain.*;
 import com.coldchainos.shipment.infrastructure.kafka.TelemetryKafkaConsumer;
@@ -68,6 +69,9 @@ class ObservabilityAndTracingIntegrationTest {
 
     @Autowired
     private ShipmentSummaryQueryService summaryQueryService;
+
+    @Autowired
+    private TelemetryIngestionService ingestionService;
 
     @Autowired
     private CorrelationContext correlationContext;
@@ -170,10 +174,8 @@ class ObservabilityAndTracingIntegrationTest {
             BigDecimal.valueOf(98.0)
         );
 
-        long beforeCount = telemetryKafkaConsumer.getProcessedCount();
         telemetryKafkaProducer.sendTelemetry(payload).get(5, TimeUnit.SECONDS);
-
-        awaitUntil(() -> telemetryKafkaConsumer.getProcessedCount() > beforeCount, 20);
+        awaitUntil(() -> ingestionService.getLatestTelemetry(tenantId, shipment.getId()).isPresent(), 20);
     }
 
     @Test

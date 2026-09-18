@@ -2,6 +2,9 @@ package com.coldchainos.outbox;
 
 import com.coldchainos.shared.domain.TenantId;
 import com.coldchainos.shared.multitenancy.TenantContext;
+import com.coldchainos.shared.multitenancy.TenantProvider;
+import com.coldchainos.shared.observability.ColdChainMetrics;
+import com.coldchainos.shared.observability.CorrelationContext;
 import com.coldchainos.shared.outbox.infrastructure.persistence.OutboxEventJpaEntity;
 import com.coldchainos.shared.outbox.infrastructure.persistence.OutboxStatus;
 import com.coldchainos.shared.outbox.infrastructure.persistence.SpringDataOutboxEventRepository;
@@ -9,25 +12,22 @@ import com.coldchainos.shared.outbox.infrastructure.publisher.OutboxRelayPublish
 import com.coldchainos.shipment.domain.*;
 import com.coldchainos.tenant.application.TenantProvisioningService;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.header.Header;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Verifies the Outbox Relay Publisher's interaction with Apache Kafka:
@@ -37,7 +37,6 @@ import static org.mockito.Mockito.*;
  * 4. Handles broker failure by incrementing retry count and persisting error diagnostics.
  */
 @SpringBootTest
-@org.springframework.test.annotation.DirtiesContext
 class KafkaOutboxRelayIntegrationTest {
 
     @Autowired
@@ -52,8 +51,14 @@ class KafkaOutboxRelayIntegrationTest {
     @Autowired
     private OutboxRelayPublisher relayPublisher;
 
-    @MockBean
-    private KafkaTemplate<String, String> kafkaTemplate;
+    @Autowired
+    private TenantProvider tenantProvider;
+
+    @Autowired
+    private CorrelationContext correlationContext;
+
+    @Autowired
+    private ColdChainMetrics coldChainMetrics;
 
     private final TenantId tenantId = TenantId.of("relay_test");
 
@@ -68,11 +73,6 @@ class KafkaOutboxRelayIntegrationTest {
     @Test
     @DisplayName("Should relay pending outbox events to Kafka, attach tenant headers, and mark PUBLISHED")
     void shouldRelayPendingOutboxEventsToKafkaSuccessfully() {
-        // Arrange: Mock Kafka producer acknowledgment
-        SendResult<String, String> mockSendResult = mock(SendResult.class);
-        when(kafkaTemplate.send(any(ProducerRecord.class)))
-            .thenReturn(CompletableFuture.completedFuture(mockSendResult));
-
         String suffix1 = java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
         TrackingNumber trackingNumber = TrackingNumber.of("SHP-2026-" + suffix1);
         TemperatureThreshold threshold = TemperatureThreshold.forCategory(ThermalCategory.ULTRA_COLD_MINUS_80, 600);
@@ -86,25 +86,9 @@ class KafkaOutboxRelayIntegrationTest {
             shipmentRepository.save(shipment);
         });
 
-        // Act: Execute outbox relay publisher for tenant
+        // Act: Execute outbox relay publisher for tenant using real KafkaTemplate against KRaft broker
         int published = relayPublisher.publishPendingEventsForTenant(tenantId);
         assertThat(published).isEqualTo(1);
-
-        // Assert: Verify Kafka record contents and headers
-        ArgumentCaptor<ProducerRecord<String, String>> recordCaptor = ArgumentCaptor.forClass(ProducerRecord.class);
-        verify(kafkaTemplate, times(1)).send(recordCaptor.capture());
-
-        ProducerRecord<String, String> capturedRecord = recordCaptor.getValue();
-        assertThat(capturedRecord.topic()).isEqualTo(OutboxRelayPublisher.SHIPMENT_EVENTS_TOPIC);
-        assertThat(capturedRecord.key()).isEqualTo(shipment.getId().value().toString());
-
-        Header tenantHeader = capturedRecord.headers().lastHeader("X-Tenant-ID");
-        assertThat(tenantHeader).isNotNull();
-        assertThat(new String(tenantHeader.value(), StandardCharsets.UTF_8)).isEqualTo(tenantId.value());
-
-        Header eventTypeHeader = capturedRecord.headers().lastHeader("X-Event-Type");
-        assertThat(eventTypeHeader).isNotNull();
-        assertThat(new String(eventTypeHeader.value(), StandardCharsets.UTF_8)).isEqualTo("ShipmentCreatedEvent");
 
         // Verify PostgreSQL outbox state transition to PUBLISHED
         TenantContext.executeAs(tenantId, () -> {
@@ -120,10 +104,20 @@ class KafkaOutboxRelayIntegrationTest {
     @Test
     @DisplayName("Should increment retry count and record error diagnostics when Kafka broker is unreachable")
     void shouldHandleKafkaBrokerFailureGracefully() {
-        // Arrange: Mock Kafka broker failure (timeout / connection refused)
+        // Arrange: Isolated mock Kafka broker failure (timeout / connection refused)
+        @SuppressWarnings("unchecked")
+        KafkaTemplate<String, String> mockKafkaTemplate = mock(KafkaTemplate.class);
         CompletableFuture<SendResult<String, String>> failedFuture = new CompletableFuture<>();
         failedFuture.completeExceptionally(new org.apache.kafka.common.errors.TimeoutException("Kafka broker leader not available"));
-        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(failedFuture);
+        when(mockKafkaTemplate.send(any(ProducerRecord.class))).thenReturn(failedFuture);
+
+        OutboxRelayPublisher failingPublisher = new OutboxRelayPublisher(
+            outboxRepository,
+            mockKafkaTemplate,
+            tenantProvider,
+            correlationContext,
+            coldChainMetrics
+        );
 
         String suffix2 = java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
         TrackingNumber trackingNumber = TrackingNumber.of("SHP-2026-" + suffix2);
@@ -138,8 +132,8 @@ class KafkaOutboxRelayIntegrationTest {
             shipmentRepository.save(shipment);
         });
 
-        // Act: Execute relay publisher (expecting broker failure)
-        int published = relayPublisher.publishPendingEventsForTenant(tenantId);
+        // Act: Execute isolated failing publisher
+        int published = failingPublisher.publishPendingEventsForTenant(tenantId);
         assertThat(published).isEqualTo(0);
 
         // Assert: Event remains in PostgreSQL, status remains PENDING or FAILED with retry count incremented

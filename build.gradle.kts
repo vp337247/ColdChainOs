@@ -49,9 +49,16 @@ dependencies {
     implementation("io.micrometer:micrometer-registry-prometheus")
     implementation("io.micrometer:micrometer-tracing-bridge-otel")
 
-    // Testing: JUnit 5, AssertJ, Mockito, Spring Kafka Test
+    // Security & Authentication: Spring Security + JJWT
+    implementation("org.springframework.boot:spring-boot-starter-security")
+    implementation("io.jsonwebtoken:jjwt-api:0.12.5")
+    runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.5")
+    runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.5")
+
+    // Testing: JUnit 5, AssertJ, Mockito, Spring Kafka Test, Spring Security Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.kafka:spring-kafka-test")
+    testImplementation("org.springframework.security:spring-security-test")
 
     // Architecture Testing: ArchUnit (Enforces modular monolith boundaries)
     testImplementation("com.tngtech.archunit:archunit-junit5:1.3.0")

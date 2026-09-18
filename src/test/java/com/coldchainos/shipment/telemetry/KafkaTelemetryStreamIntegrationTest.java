@@ -171,7 +171,7 @@ class KafkaTelemetryStreamIntegrationTest {
         kafkaProducer.sendTelemetry(excursionPayload).get(5, TimeUnit.SECONDS);
 
         // Wait up to 20 seconds for Kafka consumer to process both records
-        awaitUntil(() -> kafkaConsumer.getProcessedCount() >= 2, 20);
+        awaitUntil(() -> ingestionService.getHistoricalReadings(tenantId, shipment.getId()).size() >= 2, 20);
 
         // Assert 1: Redis has latest excursion reading
         Optional<TelemetryReading> latestInRedis = ingestionService.getLatestTelemetry(tenantId, shipment.getId());
@@ -222,7 +222,8 @@ class KafkaTelemetryStreamIntegrationTest {
         kafkaProducer.sendTelemetry(validPayload).get(5, TimeUnit.SECONDS);
 
         // Wait for the valid record to be consumed
-        awaitUntil(() -> kafkaConsumer.getProcessedCount() > countBeforeValid, 20);
+        awaitUntil(() -> ingestionService.getLatestTelemetry(tenantId, shipment.getId())
+            .filter(r -> r.temperatureCelsius().compareTo(BigDecimal.valueOf(20.00)) == 0).isPresent(), 20);
 
         // Assert: Valid message was processed despite the preceding poison pill (no head-of-line blocking!)
         Optional<TelemetryReading> cached = ingestionService.getLatestTelemetry(tenantId, shipment.getId());
