@@ -49,6 +49,14 @@ public class KafkaTelemetryConsumerConfig {
     }
 
     @Bean
+    public NewTopic shipmentEventsTopic() {
+        return TopicBuilder.name("coldchain.shipment.events")
+            .partitions(3)
+            .replicas(1)
+            .build();
+    }
+
+    @Bean
     public ConcurrentKafkaListenerContainerFactory<String, String> telemetryKafkaListenerContainerFactory(
             ConsumerFactory<String, String> consumerFactory,
             KafkaTemplate<String, String> kafkaTemplate) {
