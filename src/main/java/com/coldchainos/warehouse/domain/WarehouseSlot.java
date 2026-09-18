@@ -91,6 +91,20 @@ public class WarehouseSlot extends AggregateRoot<SlotId> {
         return reservation;
     }
 
+    /**
+     * Compensating action: releases/cancels an active reservation for a given shipment.
+     */
+    public boolean releaseReservation(ShipmentId shipmentId) {
+        Objects.requireNonNull(shipmentId, "shipmentId cannot be null");
+        for (SlotReservation res : reservations) {
+            if (res.getShipmentId().equals(shipmentId) && res.isActive()) {
+                res.cancel();
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public SlotId getId() {
         return id;

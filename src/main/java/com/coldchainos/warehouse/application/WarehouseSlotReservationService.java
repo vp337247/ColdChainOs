@@ -43,4 +43,19 @@ public class WarehouseSlotReservationService {
         slotRepository.save(slot);
         return reservation;
     }
+
+    /**
+     * Compensating action: releases active slot reservation for the specified shipment.
+     */
+    @Transactional
+    public boolean releaseReservation(SlotId slotId, ShipmentId shipmentId) {
+        WarehouseSlot slot = slotRepository.findByIdWithPessimisticLock(slotId)
+            .orElseThrow(() -> new IllegalArgumentException("Slot not found: " + slotId));
+
+        boolean released = slot.releaseReservation(shipmentId);
+        if (released) {
+            slotRepository.save(slot);
+        }
+        return released;
+    }
 }

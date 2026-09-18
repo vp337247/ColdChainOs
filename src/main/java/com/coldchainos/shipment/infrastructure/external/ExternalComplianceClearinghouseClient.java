@@ -18,6 +18,7 @@ public class ExternalComplianceClearinghouseClient implements ComplianceClearing
 
     private final AtomicInteger invocationCount = new AtomicInteger(0);
     private final AtomicBoolean forceFailure = new AtomicBoolean(false);
+    private final AtomicBoolean simulateRejection = new AtomicBoolean(false);
     private final AtomicInteger transientFailuresRemaining = new AtomicInteger(0);
 
     @Override
@@ -29,6 +30,17 @@ public class ExternalComplianceClearinghouseClient implements ComplianceClearing
         if (forceFailure.get()) {
             log.warn("[Clearinghouse] Outage forced for shipment {} on attempt {}", shipmentId, currentAttempt);
             throw new ExternalServiceException("Clearinghouse 503 Gateway Outage");
+        }
+
+        if (simulateRejection.get()) {
+            log.warn("[Clearinghouse] Regulatory clearance rejected for shipment {} on attempt {}", shipmentId, currentAttempt);
+            return new ComplianceAssessment(
+                shipmentId,
+                ComplianceStatus.REJECTED,
+                "CLR-REJECTED-" + shipmentId,
+                false,
+                "Customs clearinghouse rejected clearance: missing export temperature log"
+            );
         }
 
         if (transientFailuresRemaining.get() > 0) {
@@ -61,6 +73,10 @@ public class ExternalComplianceClearinghouseClient implements ComplianceClearing
         );
     }
 
+    public void setSimulateRejection(boolean reject) {
+        this.simulateRejection.set(reject);
+    }
+
     public void setForceFailure(boolean fail) {
         this.forceFailure.set(fail);
     }
@@ -76,6 +92,7 @@ public class ExternalComplianceClearinghouseClient implements ComplianceClearing
     public void reset() {
         this.invocationCount.set(0);
         this.forceFailure.set(false);
+        this.simulateRejection.set(false);
         this.transientFailuresRemaining.set(0);
     }
 }
