@@ -1,0 +1,151 @@
+name: ColdChainOS Production CI/CD Pipeline (AWS EKS)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: coldchainos/backend
+  EKS_CLUSTER_NAME: coldchainos-prod-cluster
+  KUBE_NAMESPACE: coldchainos
+
+jobs:
+  # =========================================================================
+  # Stage 1: Build & Package Executable JAR
+  # =========================================================================
+  build:
+    name: Build Production JAR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 (Eclipse Temurin)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Grant Execute Permission to Gradle Wrapper
+        run: chmod +x gradlew
+
+      - name: Compile and Package Executable JAR
+        run: ./gradlew bootJar -x test --no-daemon
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coldchainos-jar
+          path: build/libs/*.jar
+          retention-days: 1
+
+  # =========================================================================
+  # Stage 2: Build, Scan & Push Docker Container to Amazon ECR
+  # =========================================================================
+  docker:
+    name: Build & Push Docker to Amazon ECR
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # Required for AWS OIDC authentication
+      contents: read
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Download Built JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: coldchainos-jar
+          path: build/libs/
+
+      - name: Configure AWS Credentials (OIDC or IAM Role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          # Recommended enterprise practice: use role-to-assume with OIDC
+          # role-to-assume: arn:aws:iam::123456789012:role/ColdChainGitHubActionsRole
+          # Fallback to repository secrets if using static IAM keys:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Tag Docker Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            .
+          echo "IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Push Container Image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+  # =========================================================================
+  # Stage 3: Zero-Downtime Rolling Deployment to Amazon EKS
+  # =========================================================================
+  deploy:
+    name: Deploy to Amazon EKS
+    needs: docker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Update Kubeconfig for Amazon EKS
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Ensure Target Namespace Exists
+        run: |
+          kubectl get namespace ${{ env.KUBE_NAMESPACE }} || kubectl create namespace ${{ env.KUBE_NAMESPACE }}
+
+      - name: Apply Configuration & Secrets
+        run: |
+          kubectl apply -f k8s/configmap.yaml
+          kubectl apply -f k8s/secret.yaml
+
+      - name: Deploy Kubernetes Service & HPA
+        run: |
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/hpa.yaml
+
+      - name: Update Container Image & Execute Rolling Update
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+        run: |
+          # Dynamically patch deployment image with git commit SHA
+          kubectl set image deployment/coldchainos-app \
+            coldchainos=$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG \
+            -n ${{ env.KUBE_NAMESPACE }}
+
+      - name: Verify Zero-Downtime Rollout Status
+        run: |
+          # Wait up to 5 minutes for Spring Boot readiness probes to pass
+          kubectl rollout status deployment/coldchainos-app -n ${{ env.KUBE_NAMESPACE }} --timeout=300s
