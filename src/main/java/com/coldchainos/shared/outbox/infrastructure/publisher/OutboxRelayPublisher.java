@@ -36,6 +36,8 @@ public class OutboxRelayPublisher {
     private final SpringDataOutboxEventRepository outboxRepository;
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final TenantProvider tenantProvider;
+    private final com.coldchainos.shared.observability.CorrelationContext correlationContext;
+    private final com.coldchainos.shared.observability.ColdChainMetrics coldChainMetrics;
 
     @org.springframework.beans.factory.annotation.Value("${coldchainos.outbox.relay-enabled:false}")
     private boolean relayEnabled;
@@ -97,6 +99,12 @@ public class OutboxRelayPublisher {
             record.headers().add(new RecordHeader("X-Event-Type", event.getEventType().getBytes(StandardCharsets.UTF_8)));
             record.headers().add(new RecordHeader("X-Event-ID", event.getId().toString().getBytes(StandardCharsets.UTF_8)));
 
+            // Distributed Tracing: attach active or generated trace & span IDs to Kafka headers
+            String traceId = correlationContext.getOrCreateTraceId();
+            String spanId = correlationContext.getOrCreateSpanId();
+            record.headers().add(new RecordHeader(com.coldchainos.shared.observability.CorrelationContext.HEADER_TRACE_ID, traceId.getBytes(StandardCharsets.UTF_8)));
+            record.headers().add(new RecordHeader(com.coldchainos.shared.observability.CorrelationContext.HEADER_SPAN_ID, spanId.getBytes(StandardCharsets.UTF_8)));
+
             // Block for confirmation from Kafka broker to ensure durable write before updating status in DB
             java.util.concurrent.CompletableFuture<?> future = kafkaTemplate.send(record);
             if (future != null) {
@@ -105,7 +113,9 @@ public class OutboxRelayPublisher {
 
             event.markPublished();
             outboxRepository.save(event);
-            log.debug("Successfully published event '{}' (ID: {}) to topic '{}'", event.getEventType(), event.getId(), SHIPMENT_EVENTS_TOPIC);
+            coldChainMetrics.recordOutboxRelayed(tenantId.value(), 1);
+            log.debug("Successfully published event '{}' (ID: {}) to topic '{}' [traceId={}]",
+                event.getEventType(), event.getId(), SHIPMENT_EVENTS_TOPIC, traceId);
             return true;
         } catch (Exception e) {
             log.error("Failed to publish outbox event '{}' (ID: {}) to Kafka: {}", event.getEventType(), event.getId(), e.getMessage());

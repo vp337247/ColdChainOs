@@ -29,6 +29,7 @@ public class TelemetryKafkaConsumer {
 
     private final TelemetryIngestionService telemetryIngestionService;
     private final ObjectMapper objectMapper;
+    private final com.coldchainos.shared.observability.CorrelationContext correlationContext;
 
     private final AtomicLong processedCount = new AtomicLong(0);
 
@@ -40,15 +41,15 @@ public class TelemetryKafkaConsumer {
         log.debug("Received telemetry record on topic '{}' partition {} offset {}: key={}",
             record.topic(), record.partition(), record.offset(), record.key());
 
-        // 1. Deserialize payload (throws JsonParseException/JsonMappingException if malformed -> routed to DLQ)
+        // 1. Extract distributed tracing headers if present
+        String traceId = extractHeader(record, com.coldchainos.shared.observability.CorrelationContext.HEADER_TRACE_ID);
+        String spanId = extractHeader(record, com.coldchainos.shared.observability.CorrelationContext.HEADER_SPAN_ID);
+
+        // 2. Deserialize payload (throws JsonParseException/JsonMappingException if malformed -> routed to DLQ)
         TelemetryStreamPayload payload = objectMapper.readValue(record.value(), TelemetryStreamPayload.class);
 
-        // 2. Resolve TenantId from header or payload
-        String tenantIdStr = null;
-        Header tenantHeader = record.headers().lastHeader("X-Tenant-ID");
-        if (tenantHeader != null && tenantHeader.value() != null) {
-            tenantIdStr = new String(tenantHeader.value(), StandardCharsets.UTF_8);
-        }
+        // 3. Resolve TenantId from header or payload
+        String tenantIdStr = extractHeader(record, "X-Tenant-ID");
         if (tenantIdStr == null || tenantIdStr.isBlank()) {
             tenantIdStr = payload.tenantId();
         }
@@ -60,17 +61,28 @@ public class TelemetryKafkaConsumer {
         ShipmentId shipmentId = payload.toShipmentId();
         TelemetryReading reading = payload.toDomainReading();
 
-        // 3. Delegate to domain ingestion pipeline
-        boolean ingested = telemetryIngestionService.ingestTelemetry(tenantId, shipmentId, reading);
-        processedCount.incrementAndGet();
+        // 4. Delegate to domain ingestion pipeline within scoped correlation MDC
+        String finalTenantIdStr = tenantIdStr;
+        correlationContext.runWithCorrelation(traceId, spanId, tenantIdStr, () -> {
+            boolean ingested = telemetryIngestionService.ingestTelemetry(tenantId, shipmentId, reading);
+            processedCount.incrementAndGet();
 
-        if (ingested) {
-            log.info("Ingested telemetry for shipment '{}' (temp: {} C, partition: {}, offset: {})",
-                shipmentId, reading.temperatureCelsius(), record.partition(), record.offset());
-        } else {
-            log.debug("Discarded duplicate telemetry for sensor '{}' at '{}'",
-                reading.sensorId(), reading.recordedAt());
+            if (ingested) {
+                log.info("Ingested telemetry for shipment '{}' (temp: {} C, partition: {}, offset: {})",
+                    shipmentId, reading.temperatureCelsius(), record.partition(), record.offset());
+            } else {
+                log.debug("Discarded duplicate telemetry for sensor '{}' at '{}'",
+                    reading.sensorId(), reading.recordedAt());
+            }
+        });
+    }
+
+    private String extractHeader(ConsumerRecord<String, String> record, String headerName) {
+        Header header = record.headers().lastHeader(headerName);
+        if (header != null && header.value() != null) {
+            return new String(header.value(), StandardCharsets.UTF_8);
         }
+        return null;
     }
 
     public long getProcessedCount() {

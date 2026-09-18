@@ -32,9 +32,11 @@ public class TenantFilter extends OncePerRequestFilter {
         try {
             if (tenantHeader != null && !tenantHeader.isBlank()) {
                 TenantContext.setTenantId(tenantHeader);
+                org.slf4j.MDC.put("tenantId", tenantHeader);
             }
             filterChain.doFilter(request, response);
         } finally {
+            org.slf4j.MDC.remove("tenantId");
             // Crucial: Clear thread local to prevent contamination in thread pools
             TenantContext.clear();
         }

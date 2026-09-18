@@ -37,6 +37,7 @@ import static org.mockito.Mockito.*;
  * 4. Handles broker failure by incrementing retry count and persisting error diagnostics.
  */
 @SpringBootTest
+@org.springframework.test.annotation.DirtiesContext
 class KafkaOutboxRelayIntegrationTest {
 
     @Autowired

@@ -36,6 +36,7 @@ public class ShipmentNotificationListener {
 
     private final IdempotentConsumerExecutor idempotentExecutor;
     private final ObjectMapper objectMapper;
+    private final com.coldchainos.shared.observability.CorrelationContext correlationContext;
 
     // In-memory ledger of dispatched notifications for verification & audit
     private final List<DispatchedNotification> dispatchedNotifications = new CopyOnWriteArrayList<>();
@@ -55,6 +56,8 @@ public class ShipmentNotificationListener {
         String tenantIdStr = extractHeader(record, "X-Tenant-ID");
         String eventType = extractHeader(record, "X-Event-Type");
         String eventIdStr = extractHeader(record, "X-Event-ID");
+        String traceId = extractHeader(record, com.coldchainos.shared.observability.CorrelationContext.HEADER_TRACE_ID);
+        String spanId = extractHeader(record, com.coldchainos.shared.observability.CorrelationContext.HEADER_SPAN_ID);
 
         if (tenantIdStr == null || eventIdStr == null) {
             log.warn("Skipping malformed event without required headers on partition {} offset {}",
@@ -79,14 +82,15 @@ public class ShipmentNotificationListener {
 
         final Instant finalOccurredAt = occurredAt;
 
-        // 3. Execute idempotently within active tenant schema
-        TenantContext.executeAs(tenantId, () -> {
-            boolean processed = idempotentExecutor.executeIdempotently(
-                CONSUMER_NAME,
-                eventId,
-                eventType != null ? eventType : "UnknownEvent",
-                aggregateId,
-                () -> {
+        // 3. Execute idempotently within active tenant schema and correlation context
+        correlationContext.runWithCorrelation(traceId, spanId, tenantIdStr, () -> {
+            TenantContext.executeAs(tenantId, () -> {
+                boolean processed = idempotentExecutor.executeIdempotently(
+                    CONSUMER_NAME,
+                    eventId,
+                    eventType != null ? eventType : "UnknownEvent",
+                    aggregateId,
+                    () -> {
                     // Out-of-order temporal fencing check
                     Instant lastWatermark = aggregateWatermarks.get(aggregateId);
                     if (lastWatermark != null && finalOccurredAt.isBefore(lastWatermark)) {
@@ -117,6 +121,7 @@ public class ShipmentNotificationListener {
                 log.info("Discarded duplicate event '{}' (ID: {}) for shipment '{}'",
                     eventType, eventId, aggregateId);
             }
+        });
         });
     }
 

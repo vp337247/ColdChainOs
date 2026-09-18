@@ -40,6 +40,8 @@ public class ShipmentSummaryProjector {
     private final ShipmentRepository shipmentRepository;
     private final IdempotentConsumerExecutor idempotentExecutor;
     private final ObjectMapper objectMapper;
+    private final com.coldchainos.shared.observability.CorrelationContext correlationContext;
+    private final com.coldchainos.shared.observability.ColdChainMetrics coldChainMetrics;
 
     private final AtomicInteger projectedCount = new AtomicInteger(0);
 
@@ -51,6 +53,8 @@ public class ShipmentSummaryProjector {
         String tenantIdStr = extractHeader(record, "X-Tenant-ID");
         String eventType = extractHeader(record, "X-Event-Type");
         String eventIdStr = extractHeader(record, "X-Event-ID");
+        String traceId = extractHeader(record, com.coldchainos.shared.observability.CorrelationContext.HEADER_TRACE_ID);
+        String spanId = extractHeader(record, com.coldchainos.shared.observability.CorrelationContext.HEADER_SPAN_ID);
 
         if (tenantIdStr == null || eventIdStr == null || eventType == null) {
             log.warn("Projector skipping malformed event without required headers on partition {} offset {}",
@@ -62,23 +66,28 @@ public class ShipmentSummaryProjector {
         UUID eventId = UUID.fromString(eventIdStr);
         UUID shipmentUuid = UUID.fromString(record.key());
 
-        TenantContext.executeAs(tenantId, () -> {
-            idempotentExecutor.executeIdempotently(
-                CONSUMER_NAME,
-                eventId,
-                eventType,
-                shipmentUuid.toString(),
-                () -> {
-                    try {
-                        applyEventProjection(tenantId, shipmentUuid, eventType, eventId, record.value());
-                        projectedCount.incrementAndGet();
-                    } catch (Exception e) {
-                        log.error("Failed to project event '{}' for shipment '{}': {}",
-                            eventType, shipmentUuid, e.getMessage(), e);
-                        throw new RuntimeException("Projection failed", e);
+        correlationContext.runWithCorrelation(traceId, spanId, tenantIdStr, () -> {
+            TenantContext.executeAs(tenantId, () -> {
+                idempotentExecutor.executeIdempotently(
+                    CONSUMER_NAME,
+                    eventId,
+                    eventType,
+                    shipmentUuid.toString(),
+                    () -> {
+                        io.micrometer.core.instrument.Timer.Sample sample = coldChainMetrics.startTimer();
+                        try {
+                            applyEventProjection(tenantId, shipmentUuid, eventType, eventId, record.value());
+                            projectedCount.incrementAndGet();
+                        } catch (Exception e) {
+                            log.error("Failed to project event '{}' for shipment '{}': {}",
+                                eventType, shipmentUuid, e.getMessage(), e);
+                            throw new RuntimeException("Projection failed", e);
+                        } finally {
+                            coldChainMetrics.stopTimer(sample);
+                        }
                     }
-                }
-            );
+                );
+            });
         });
     }
 

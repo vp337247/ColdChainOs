@@ -26,6 +26,7 @@ public class TelemetryKafkaProducer {
 
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
+    private final com.coldchainos.shared.observability.CorrelationContext correlationContext;
 
     @Value("${coldchainos.telemetry.raw-topic:coldchain.telemetry.raw}")
     private String rawTopic;
@@ -49,8 +50,14 @@ public class TelemetryKafkaProducer {
             }
             record.headers().add(new RecordHeader("X-Produced-At", Instant.now().toString().getBytes(StandardCharsets.UTF_8)));
 
-            log.debug("Publishing telemetry for shipment '{}' to topic '{}' with key '{}'",
-                payload.shipmentId(), rawTopic, partitionKey);
+            // Distributed Tracing: propagate active or generated trace & span IDs
+            String traceId = correlationContext.getOrCreateTraceId();
+            String spanId = correlationContext.getOrCreateSpanId();
+            record.headers().add(new RecordHeader(com.coldchainos.shared.observability.CorrelationContext.HEADER_TRACE_ID, traceId.getBytes(StandardCharsets.UTF_8)));
+            record.headers().add(new RecordHeader(com.coldchainos.shared.observability.CorrelationContext.HEADER_SPAN_ID, spanId.getBytes(StandardCharsets.UTF_8)));
+
+            log.debug("Publishing telemetry for shipment '{}' to topic '{}' with key '{}' [traceId={}]",
+                payload.shipmentId(), rawTopic, partitionKey, traceId);
 
             return kafkaTemplate.send(record);
         } catch (Exception e) {

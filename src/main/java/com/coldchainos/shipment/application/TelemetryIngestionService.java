@@ -24,6 +24,7 @@ public class TelemetryIngestionService {
     private final TelemetryCacheRepository cacheRepository;
     private final ShipmentRepository shipmentRepository;
     private final com.coldchainos.shipment.infrastructure.persistence.TelemetryHistoryJpaRepository telemetryHistoryJpaRepository;
+    private final com.coldchainos.shared.observability.ColdChainMetrics coldChainMetrics;
 
     /**
      * Ingests an IoT sensor telemetry packet:
@@ -77,9 +78,13 @@ public class TelemetryIngestionService {
                             "Temperature excursion recorded: " + reading.temperatureCelsius() + " C at " + reading.recordedAt()
                         );
                         shipmentRepository.save(shipment);
+                        coldChainMetrics.recordExcursionDetected(tenantId.value(), shipment.getThreshold().category().name());
+                        coldChainMetrics.recordTelemetryIngested(tenantId.value(), true);
+                        return;
                     }
                 }
             }
+            coldChainMetrics.recordTelemetryIngested(tenantId.value(), false);
         });
 
         return true;

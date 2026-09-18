@@ -44,6 +44,11 @@ dependencies {
     // In-Memory Caching: Redis
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
 
+    // Observability: Spring Boot Actuator, Prometheus, and OpenTelemetry Micrometer Tracing
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("io.micrometer:micrometer-registry-prometheus")
+    implementation("io.micrometer:micrometer-tracing-bridge-otel")
+
     // Testing: JUnit 5, AssertJ, Mockito, Spring Kafka Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.kafka:spring-kafka-test")
