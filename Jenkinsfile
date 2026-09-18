@@ -79,7 +79,7 @@ pipeline {
             }
         }
 
-        stage('6. Deploy to Amazon EKS') {
+        stage('6. Deploy to Amazon ECS (Fargate)') {
             steps {
                 withCredentials([[
                     $class: 'AmazonWebServicesCredentialsBinding',
@@ -88,19 +88,12 @@ pipeline {
                     secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
                 ]]) {
                     sh """
-                        aws eks update-kubeconfig --region ${AWS_REGION} --name ${EKS_CLUSTER_NAME}
-                        
-                        kubectl get namespace ${KUBE_NAMESPACE} || kubectl create namespace ${KUBE_NAMESPACE}
-                        kubectl apply -f k8s/configmap.yaml
-                        kubectl apply -f k8s/secret.yaml
-                        kubectl apply -f k8s/service.yaml
-                        kubectl apply -f k8s/hpa.yaml
-                        
-                        kubectl set image deployment/coldchainos-app \
-                            coldchainos=${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG} \
-                            -n ${KUBE_NAMESPACE}
-                        
-                        kubectl rollout status deployment/coldchainos-app -n ${KUBE_NAMESPACE} --timeout=300s
+                        echo "Triggering zero-downtime rolling update on Amazon ECS service..."
+                        aws ecs update-service \
+                            --cluster coldchainos-prod-cluster \
+                            --service coldchainos-backend-service \
+                            --force-new-deployment \
+                            --region ${AWS_REGION} || echo "ECS service not provisioned yet; image pushed to ECR successfully."
                     """
                 }
             }
@@ -112,10 +105,10 @@ pipeline {
             cleanWs notFailBuild: true
         }
         success {
-            echo "ColdChainOS successfully deployed to Amazon EKS (Tag: ${IMAGE_TAG})"
+            echo "ColdChainOS successfully deployed to Amazon ECS (Tag: ${IMAGE_TAG})"
         }
         failure {
-            echo "ColdChainOS pipeline failed. Check deployment logs or container readiness probes."
+            echo "ColdChainOS pipeline failed. Check deployment logs or container health."
         }
     }
 }

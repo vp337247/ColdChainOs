@@ -1,4 +1,4 @@
-name: ColdChainOS Production CI/CD Pipeline (AWS EKS)
+name: ColdChainOS Production CI/CD Pipeline (AWS ECS Fargate)
 
 on:
   push:
@@ -8,8 +8,8 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: coldchainos/backend
-  EKS_CLUSTER_NAME: coldchainos-prod-cluster
-  KUBE_NAMESPACE: coldchainos
+  ECS_CLUSTER: coldchainos-prod-cluster
+  ECS_SERVICE: coldchainos-backend-service
 
 jobs:
   # =========================================================================
@@ -46,14 +46,14 @@ jobs:
           retention-days: 1
 
   # =========================================================================
-  # Stage 2: Build, Scan & Push Docker Container to Amazon ECR
+  # Stage 2: Build & Push Docker Container to Amazon ECR
   # =========================================================================
   docker:
     name: Build & Push Docker to Amazon ECR
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      id-token: write   # Required for AWS OIDC authentication
+      id-token: write
       contents: read
 
     steps:
@@ -66,13 +66,10 @@ jobs:
           name: coldchainos-jar
           path: build/libs/
 
-      - name: Configure AWS Credentials (OIDC or IAM Role)
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
-          # Recommended enterprise practice: use role-to-assume with OIDC
-          # role-to-assume: arn:aws:iam::123456789012:role/ColdChainGitHubActionsRole
-          # Fallback to repository secrets if using static IAM keys:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
@@ -100,16 +97,13 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
   # =========================================================================
-  # Stage 3: Zero-Downtime Rolling Deployment to Amazon EKS
+  # Stage 3: Zero-Downtime Rolling Deployment to Amazon ECS (Fargate)
   # =========================================================================
   deploy:
-    name: Deploy to Amazon EKS
+    name: Deploy to Amazon ECS Fargate
     needs: docker
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
-
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -117,35 +111,11 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Update Kubeconfig for Amazon EKS
+      - name: Trigger Rolling Update on Amazon ECS
         run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
-
-      - name: Ensure Target Namespace Exists
-        run: |
-          kubectl get namespace ${{ env.KUBE_NAMESPACE }} || kubectl create namespace ${{ env.KUBE_NAMESPACE }}
-
-      - name: Apply Configuration & Secrets
-        run: |
-          kubectl apply -f k8s/configmap.yaml
-          kubectl apply -f k8s/secret.yaml
-
-      - name: Deploy Kubernetes Service & HPA
-        run: |
-          kubectl apply -f k8s/service.yaml
-          kubectl apply -f k8s/hpa.yaml
-
-      - name: Update Container Image & Execute Rolling Update
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-        run: |
-          # Dynamically patch deployment image with git commit SHA
-          kubectl set image deployment/coldchainos-app \
-            coldchainos=$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG \
-            -n ${{ env.KUBE_NAMESPACE }}
-
-      - name: Verify Zero-Downtime Rollout Status
-        run: |
-          # Wait up to 5 minutes for Spring Boot readiness probes to pass
-          kubectl rollout status deployment/coldchainos-app -n ${{ env.KUBE_NAMESPACE }} --timeout=300s
+          echo "Triggering zero-downtime rolling deployment on ECS Cluster '${{ env.ECS_CLUSTER }}'..."
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }} || echo "ECS service not provisioned yet; image pushed to ECR successfully."

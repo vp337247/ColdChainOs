@@ -77,7 +77,7 @@ graph TD
 | **Resilience & Circuit Breakers** | Resilience4j | 2.2.0 (Spring Boot 3 + AOP) |
 | **Security & Auth** | Spring Security / JJWT | Spring Security 6, JJWT 0.12.5 |
 | **Observability** | Micrometer & OpenTelemetry | Actuator, Prometheus, OTel Tracing Bridge |
-| **Container Runtime** | Docker / Kubernetes | Multi-stage Dockerfile, K8s HPA manifests |
+| **Container Runtime** | Docker / AWS ECS Fargate | Multi-stage Dockerfile, AWS Task Definition |
 
 ---
 
@@ -90,13 +90,8 @@ ColdChainOS/
 │   ├── 02-functional-requirements.md
 │   ├── 03-non-functional-requirements.md
 │   ├── 07-context-diagram.md
-│   └── 08-production-readiness-runbook.md
-├── k8s/                                # Production Kubernetes manifests
-│   ├── deployment.yaml
-│   ├── service.yaml
-│   ├── configmap.yaml
-│   ├── secret.yaml
-│   └── hpa.yaml
+│   ├── 08-production-readiness-runbook.md
+│   └── 09-aws-deployment-architecture.md
 ├── src/main/java/com/coldchainos/
 │   ├── ai/                             # Gemini AI Incident Commander, RAG & SOP store
 │   ├── audit/                          # 21 CFR Part 11 SHA-256 cryptographic ledger
@@ -110,6 +105,8 @@ ColdChainOS/
 │   ├── db/migration/                   # Flyway forward migrations V1 through V8
 │   ├── application.yml                 # Base development profile
 │   └── application-prod.yml            # Production-tuned connection pools & batch configs
+├── .github/workflows/deploy-aws.yml    # Automated CI/CD pipeline deploying to AWS ECR & ECS
+├── Jenkinsfile                         # Declarative Jenkins pipeline for container deployment
 ├── docker-compose.yml                  # Local development stack (Postgres, Redis, Kafka KRaft)
 ├── docker-compose.prod.yml             # Production composition with Prometheus
 ├── Dockerfile                          # Hardened multi-stage container build
@@ -208,7 +205,7 @@ POST /api/v1/benchmarks/rate-limiter?tenantId=pharma_corp&requests=2000&capacity
 # Health status (Database, Redis, Kafka, Disk)
 GET /actuator/health
 
-# Kubernetes probes
+# Container health probes
 GET /actuator/health/liveness
 GET /actuator/health/readiness
 
@@ -226,21 +223,28 @@ GET /actuator/prometheus
 
 ---
 
-## Production Deployment
+## AWS Cloud Deployment (Amazon ECS on AWS Fargate)
 
-### Docker Production Image
+Rather than introducing the operational overhead and cluster maintenance of Kubernetes, ColdChainOS is optimized for **Amazon ECS on AWS Fargate**—running containerized tasks serverless behind an Application Load Balancer.
+
+### 1. Build and Run Container Locally
 ```bash
 docker build -t coldchainos/backend:latest .
 docker run -p 8080:8080 --env-file .env coldchainos/backend:latest
 ```
 
-### Kubernetes
-```bash
-kubectl apply -f k8s/configmap.yaml
-kubectl apply -f k8s/secret.yaml
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/service.yaml
-kubectl apply -f k8s/hpa.yaml
-```
+### 2. Production AWS Topology
+- **Compute**: Amazon ECS (AWS Fargate) with zero server management and automatic horizontal task autoscaling.
+- **Database**: Amazon RDS for PostgreSQL 16 (Multi-AZ synchronous primary/standby).
+- **Cache**: Amazon ElastiCache for Redis 7 (Multi-AZ replication group).
+- **Event Streaming**: Amazon MSK (Managed Streaming for Apache Kafka).
+- **Ingress**: AWS Application Load Balancer (ALB) terminating HTTPS via AWS Certificate Manager (ACM).
 
-Detailed operational runbooks, disaster recovery procedures, and backup scripts are documented in [`docs/08-production-readiness-runbook.md`](docs/08-production-readiness-runbook.md).
+### 3. Automated CI/CD
+Every commit pushed to `main` triggers `.github/workflows/deploy-aws.yml`, which:
+1. Compiles and packages the production archive.
+2. Builds and tags the Docker image with the git commit SHA.
+3. Pushes the container to **Amazon ECR**.
+4. Triggers a zero-downtime rolling service deployment on **Amazon ECS**.
+
+Detailed operational runbooks and disaster recovery procedures are documented in [`docs/08-production-readiness-runbook.md`](docs/08-production-readiness-runbook.md) and [`docs/09-aws-deployment-architecture.md`](docs/09-aws-deployment-architecture.md).

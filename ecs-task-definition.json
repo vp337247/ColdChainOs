@@ -1,0 +1,91 @@
+{
+  "family": "coldchainos-backend-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::AWS_ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::AWS_ACCOUNT_ID:role/ColdChainBackendTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "coldchainos",
+      "image": "AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/coldchainos/backend:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "hostPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "SPRING_PROFILES_ACTIVE",
+          "value": "prod"
+        },
+        {
+          "name": "JAVA_OPTS",
+          "value": "-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+        },
+        {
+          "name": "SPRING_DATASOURCE_URL",
+          "value": "jdbc:postgresql://rds-postgres.internal:5432/coldchainos_db?prepareThreshold=5&reWriteBatchedInserts=true"
+        },
+        {
+          "name": "REDIS_HOST",
+          "value": "elasticache-redis.internal"
+        },
+        {
+          "name": "REDIS_PORT",
+          "value": "6379"
+        },
+        {
+          "name": "KAFKA_BOOTSTRAP_SERVERS",
+          "value": "msk-kafka.internal:9092"
+        },
+        {
+          "name": "TRACING_PROBABILITY",
+          "value": "0.1"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "SPRING_DATASOURCE_USERNAME",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:AWS_ACCOUNT_ID:secret:coldchain/db-user"
+        },
+        {
+          "name": "SPRING_DATASOURCE_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:AWS_ACCOUNT_ID:secret:coldchain/db-pass"
+        },
+        {
+          "name": "COLDCHAIN_SECURITY_JWT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:AWS_ACCOUNT_ID:secret:coldchain/jwt-secret"
+        },
+        {
+          "name": "GEMINI_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:AWS_ACCOUNT_ID:secret:coldchain/gemini-key"
+        }
+      ],
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -f http://localhost:8080/actuator/health/liveness || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 45
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/coldchainos-backend",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
