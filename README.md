@@ -105,6 +105,10 @@ ColdChainOS/
 │   ├── db/migration/                   # Flyway forward migrations V1 through V8
 │   ├── application.yml                 # Base development profile
 │   └── application-prod.yml            # Production-tuned connection pools & batch configs
+├── terraform/                          # Production Infrastructure as Code (AWS ECS, RDS, Redis, ALB)
+│   ├── main.tf                         # Root composition
+│   ├── environments/                   # Environment variable files (dev.tfvars, prod.tfvars)
+│   └── modules/                        # Reusable modules (vpc, rds, elasticache, alb, ecs)
 ├── .github/workflows/deploy-aws.yml    # Automated CI/CD pipeline deploying to AWS ECR & ECS
 ├── Jenkinsfile                         # Declarative Jenkins pipeline for container deployment
 ├── docker-compose.yml                  # Local development stack (Postgres, Redis, Kafka KRaft)
@@ -246,5 +250,24 @@ Every commit pushed to `main` triggers `.github/workflows/deploy-aws.yml`, which
 2. Builds and tags the Docker image with the git commit SHA.
 3. Pushes the container to **Amazon ECR**.
 4. Triggers a zero-downtime rolling service deployment on **Amazon ECS**.
+
+---
+
+## Infrastructure as Code (Terraform)
+
+The complete AWS environment is fully declared as code under [`terraform/`](terraform/):
+
+```bash
+cd terraform
+
+# 1. Initialize AWS providers and modules
+terraform init
+
+# 2. Preview changes for production environment
+terraform plan -var-file=environments/prod.tfvars
+
+# 3. Provision full VPC, RDS Multi-AZ, ElastiCache, ALB, and ECS Fargate cluster
+terraform apply -var-file=environments/prod.tfvars
+```
 
 Detailed operational runbooks and disaster recovery procedures are documented in [`docs/08-production-readiness-runbook.md`](docs/08-production-readiness-runbook.md) and [`docs/09-aws-deployment-architecture.md`](docs/09-aws-deployment-architecture.md).
