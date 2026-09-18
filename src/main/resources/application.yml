@@ -98,3 +98,8 @@ coldchain:
     default-capacity: 10
     default-refill-rate-per-second: 5
 
+gemini:
+  api-key: ${GEMINI_API_KEY:demo}
+  model-name: ${GEMINI_MODEL_NAME:gemini-1.5-flash}
+  temperature: 0.1
+

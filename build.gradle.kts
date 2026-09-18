@@ -59,6 +59,11 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-aop")
     implementation("io.github.resilience4j:resilience4j-spring-boot3:2.2.0")
 
+    // AI & LLM: LangChain4j + Google AI Gemini + In-Memory Embeddings
+    implementation("dev.langchain4j:langchain4j:0.34.0")
+    implementation("dev.langchain4j:langchain4j-google-ai-gemini:0.34.0")
+    implementation("dev.langchain4j:langchain4j-embeddings-all-minilm-l6-v2:0.34.0")
+
     // Testing: JUnit 5, AssertJ, Mockito, Spring Kafka Test, Spring Security Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.kafka:spring-kafka-test")

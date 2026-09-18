@@ -99,3 +99,8 @@ logging:
     com.coldchainos: INFO
     org.hibernate.SQL: WARN
     org.springframework.security: WARN
+
+gemini:
+  api-key: ${GEMINI_API_KEY:demo}
+  model-name: ${GEMINI_MODEL_NAME:gemini-1.5-flash}
+  temperature: 0.1
