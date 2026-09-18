@@ -11,3 +11,18 @@ docker-data/
 .env
 .env.local
 *.env
+
+# Terraform Local State & Credentials
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+*.auto.tfvars
+secrets.tfvars
