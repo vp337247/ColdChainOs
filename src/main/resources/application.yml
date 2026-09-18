@@ -74,3 +74,27 @@ management:
   tracing:
     sampling:
       probability: 1.0
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      complianceClearinghouse:
+        sliding-window-size: 6
+        minimum-number-of-calls: 4
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 1000ms
+        permitted-number-of-calls-in-half-open-state: 2
+        automatic-transition-from-open-to-half-open-enabled: true
+  retry:
+    instances:
+      complianceClearinghouse:
+        max-attempts: 3
+        wait-duration: 100ms
+        retry-exceptions:
+          - com.coldchainos.shipment.infrastructure.external.ExternalServiceException
+
+coldchain:
+  rate-limit:
+    default-capacity: 10
+    default-refill-rate-per-second: 5
+

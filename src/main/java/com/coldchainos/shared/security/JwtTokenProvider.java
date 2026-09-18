@@ -51,6 +51,10 @@ public class JwtTokenProvider {
             .compact();
     }
 
+    public String generateToken(String userId, String tenantId, Set<String> roles) {
+        return generateToken(userId, tenantId, roles, Duration.ofHours(1));
+    }
+
     /**
      * Validates signature and expiration of a JWT token string.
      */
