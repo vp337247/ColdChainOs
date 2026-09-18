@@ -1,0 +1,101 @@
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres-primary:5432/coldchainos_db?prepareThreshold=5&reWriteBatchedInserts=true}
+    username: ${SPRING_DATASOURCE_USERNAME:coldchain_admin}
+    password: ${SPRING_DATASOURCE_PASSWORD:coldchain_prod_secret}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: ColdChainProdHikariPool
+      maximum-pool-size: ${DB_POOL_MAX:50}
+      minimum-idle: ${DB_POOL_MIN_IDLE:10}
+      idle-timeout: 300000          # 5 minutes
+      max-lifetime: 1800000          # 30 minutes
+      connection-timeout: 20000      # 20 seconds
+      leak-detection-threshold: 5000 # Alert on connections held > 5 seconds
+      validation-timeout: 3000
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: false
+        generate_statistics: false
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          batch_size: 50
+          order_inserts: true
+          order_updates: true
+          batch_versioned_data: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 64
+          max-idle: 16
+          min-idle: 8
+          max-wait: 1000ms
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+    producer:
+      acks: all
+      retries: 5
+      batch-size: 65536      # 64 KB batches
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        compression.type: snappy
+        linger.ms: 10          # 10ms micro-batching for maximum throughput
+    consumer:
+      group-id: coldchain-telemetry-consumer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      max-poll-records: 500
+      properties:
+        session.timeout.ms: 45000
+        max.poll.interval.ms: 300000
+
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      environment: production
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        coldchain.cqrs.projection.latency: true
+  tracing:
+    sampling:
+      probability: ${TRACING_PROBABILITY:0.1} # Sample 10% in production
+
+logging:
+  level:
+    root: INFO
+    com.coldchainos: INFO
+    org.hibernate.SQL: WARN
+    org.springframework.security: WARN
