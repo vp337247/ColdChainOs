@@ -38,15 +38,10 @@ public class TenantProvisioningService {
      * causes connection pool exhaustion and PostgreSQL catalog lock deadlocks.
      */
     public Tenant provisionTenant(TenantId tenantId, String organizationName) {
-        Optional<Tenant> existing = tenantRepository.findById(tenantId);
-        if (existing.isPresent()) {
-            return existing.get();
-        }
-
         String schemaName = tenantId.toSchemaName();
-        log.info("Provisioning isolated schema '{}' for tenant '{}'", schemaName, tenantId);
+        log.info("Ensuring isolated schema '{}' is up-to-date for tenant '{}'", schemaName, tenantId);
 
-        // 1. Run Flyway migration on the new schema (automatically creates schema if not present)
+        // 1. Run Flyway migration on the schema (creates schema if missing, applies forward migrations if existing)
         Flyway flyway = Flyway.configure()
             .dataSource(dataSource)
             .schemas(schemaName)
@@ -55,11 +50,25 @@ public class TenantProvisioningService {
             .load();
         flyway.migrate();
 
+        Optional<Tenant> existing = tenantRepository.findById(tenantId);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
         // 2. Register tenant in public catalog
         Tenant tenant = Tenant.create(tenantId, organizationName);
         Tenant saved = tenantRepository.save(tenant);
         log.info("Tenant '{}' successfully provisioned with schema '{}'", tenantId, schemaName);
         return saved;
+    }
+
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void onApplicationReady() {
+        try {
+            migrateAllTenants();
+        } catch (Exception e) {
+            log.warn("Auto-migration of registered tenants on startup encountered a non-critical notice: {}", e.getMessage());
+        }
     }
 
     /**

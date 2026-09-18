@@ -46,10 +46,19 @@ spring:
       properties:
         enable.idempotence: true
         max.in.flight.requests.per.connection: 5
+    consumer:
+      group-id: coldchain-telemetry-consumer
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      enable-auto-commit: false
 
 coldchainos:
   outbox:
     relay-interval-ms: 2000
+  telemetry:
+    raw-topic: coldchain.telemetry.raw
+    dlq-topic: coldchain.telemetry.dlq
 
 server:
   port: 8080
